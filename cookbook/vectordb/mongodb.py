@@ -16,7 +16,7 @@ mdb_connection_string = ""
 
 knowledge_base = PDFUrlKnowledgeBase(
     urls=["https://phi-public.s3.amazonaws.com/recipes/ThaiRecipes.pdf"],
-    vector_db=MongoDBVector(collection_name="recipes", db_url=mdb_connection_string, wait_until_index_ready=60, wait_after_insert=300),
+    vector_db=MongoDBVector(collection_name="r3c1p3s1", db_url=mdb_connection_string, wait_until_index_ready=60, wait_after_insert=300),
 ) #adjust wait_after_insert and wait_until_index_ready to your needs
 knowledge_base.load(recreate=True)  
 

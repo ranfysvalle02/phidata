@@ -8,6 +8,14 @@ from phi.vectordb.base import VectorDb
 from phi.utils.log import logger
 from phi.vectordb.distance import Distance
 
+from mdb_toolkit import CustomMongoClient
+
+#global embedder
+#set global OPENAI_API_KEY
+#import os
+#os.environ["OPENAI_API_KEY"] = "sk-xxxxxx"
+embedder = OpenAIEmbedder()
+
 try:
     from hashlib import md5
 
@@ -67,11 +75,11 @@ class MongoDBVector(VectorDb):
         self._db = self._client[self.database]
         self._collection = self._get_or_create_collection()
 
-    def _get_client(self) -> MongoClient:
+    def _get_client(self) -> CustomMongoClient:
         """Create or retrieve the MongoDB client."""
         try:
             logger.debug("Creating MongoDB Client")
-            client = MongoClient(self.connection_string, **self.kwargs)
+            client = CustomMongoClient(self.connection_string, get_embedding=embedder.get_embedding, **self.kwargs)
             # Trigger a connection to verify the client
             client.admin.command('ping')
             logger.info("Connected to MongoDB successfully.")
@@ -110,26 +118,15 @@ class MongoDBVector(VectorDb):
             if overwrite and self._search_index_exists():
                 logger.info(f"Dropping existing search index '{index_name}'.")
                 self._collection.drop_search_index(index_name)
-
-            logger.info(f"Creating search index '{index_name}'.")
-
-            search_index_model = SearchIndexModel(
-                definition={
-                    "fields": [
-                        {
-                            "type": "vector",
-                            "numDimensions": 1536,
-                            "path": "embedding",
-                            "similarity": self.distance_metric, #cosine
-                        },
-                    ]
-                },
-                name=index_name,
-                type="vectorSearch",
+                # add slight delay to wait for deletion
+                time.sleep(5)
+            
+            self._client._create_search_index(
+                database_name=self.database,
+                collection_name=self.collection_name,
+                index_name=index_name,
+                distance_metric=self.distance_metric,
             )
-
-            # Create the Atlas Search index
-            self._collection.create_search_index(model=search_index_model)
             logger.info(f"Search index '{index_name}' created successfully.")
         except errors.OperationFailure as e:
             logger.error(f"Failed to create search index: {e}")
@@ -150,16 +147,8 @@ class MongoDBVector(VectorDb):
         """Wait until the Atlas Search index is ready."""
         start_time = time.time()
         index_name = "vector_index_1"
-        while True:
-            try:
-                if self._search_index_exists():
-                    logger.info(f"Search index '{index_name}' is ready.")
-                    break
-            except Exception as e:
-                logger.error(f"Error checking index status: {e}")
-            if time.time() - start_time > self.wait_until_index_ready:
-                raise TimeoutError("Timeout waiting for search index to become ready.")
-            time.sleep(1)
+        self._client._wait_for_index_ready()
+        logger.info(f"Search index '{index_name}' is ready.")
 
     def collection_exists(self) -> bool:
         """Check if the collection exists in the database."""
